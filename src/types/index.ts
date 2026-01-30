@@ -94,6 +94,7 @@ export interface NewsCategory {
   description: string;
   icon: string;
   slug: string;
+  articleCount?: number;
 }
 
 export interface NewsUser {

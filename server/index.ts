@@ -1,6 +1,6 @@
 import express from 'express';
 import cors from 'cors';
-import { createReadStream, existsSync, statSync, readdirSync, appendFileSync } from 'fs';
+import { createReadStream, existsSync, statSync, readdirSync, appendFileSync, mkdirSync, writeFileSync } from 'fs';
 import { createInterface } from 'readline';
 import path from 'path';
 import { randomUUID } from 'crypto';
@@ -619,7 +619,7 @@ function createLookupMap<T extends { id: string }>(items: T[]): Map<string, T> {
   return new Map(items.map(item => [item.id, item]));
 }
 
-// Get news categories
+// Get news categories (with article count)
 app.get('/api/news/categories', async (req, res) => {
   const dbPath = req.query.path as string;
   
@@ -627,13 +627,28 @@ app.get('/api/news/categories', async (req, res) => {
     return res.status(400).json({ error: 'Invalid database path' });
   }
 
-  const docs = await getDocumentsByCollection(dbPath, 'categories');
-  const categories = docs.map(doc => ({
+  // Get categories and news articles
+  const [categoryDocs, newsDocs] = await Promise.all([
+    getDocumentsByCollection(dbPath, 'categories'),
+    getDocumentsByCollection(dbPath, 'news'),
+  ]);
+
+  // Count articles per category
+  const articleCountMap = new Map<string, number>();
+  for (const news of newsDocs) {
+    const categoryId = news.metadata?.categoryId as string;
+    if (categoryId) {
+      articleCountMap.set(categoryId, (articleCountMap.get(categoryId) || 0) + 1);
+    }
+  }
+
+  const categories = categoryDocs.map(doc => ({
     id: doc.id,
     name: doc.metadata?.name as string || '',
     description: doc.metadata?.description as string || '',
     icon: doc.metadata?.icon as string || '',
     slug: doc.metadata?.slug as string || '',
+    articleCount: articleCountMap.get(doc.id) || 0,
   }));
 
   res.json({ categories });
@@ -1126,19 +1141,22 @@ function writeCollectionFile(dbPath: string, collection: string, documents: Memo
   
   // Ensure directory exists
   if (!existsSync(collectionDir)) {
-    require('fs').mkdirSync(collectionDir, { recursive: true });
+    mkdirSync(collectionDir, { recursive: true });
   }
   
   // Write all documents
   const content = documents.map(doc => JSON.stringify(doc)).join('\n') + '\n';
-  require('fs').writeFileSync(collectionDocPath, content, 'utf-8');
+  writeFileSync(collectionDocPath, content, 'utf-8');
 }
 
 // Create a new category
 app.post('/api/news/categories', async (req, res) => {
-  const { path: dbPath, name, description, icon, slug } = req.body;
+  const { path: dbPath, name, description, icon, slug, code } = req.body;
+
+  console.log('Creating category with data:', { dbPath, name, description, icon, slug, code });
 
   if (!dbPath || !isValidAidb(dbPath)) {
+    console.error('Invalid database path:', dbPath);
     return res.status(400).json({ error: 'Invalid database path' });
   }
 
@@ -1146,47 +1164,65 @@ app.post('/api/news/categories', async (req, res) => {
     return res.status(400).json({ error: 'Name, description and icon are required' });
   }
 
-  // Generate slug if not provided
-  const categorySlug = slug || name.toLowerCase().replace(/\s+/g, '-');
-  const categoryId = `cat_${categorySlug}`;
-
-  // Check if category ID already exists
-  const existingCategories = await readCollectionFile(dbPath, 'categories');
-  if (existingCategories.some(c => c.id === categoryId)) {
-    return res.status(400).json({ error: `Category with ID '${categoryId}' already exists` });
+  if (!code) {
+    return res.status(400).json({ error: 'Category code is required (must be in English)' });
   }
 
-  // Create the new category
-  const now = Date.now();
-  const newCategory: MemoryNode = {
-    id: categoryId,
-    content: `${name} - ${description}`,
-    content_type: 'category',
-    parent_id: undefined,
-    children: [],
-    depth: 0,
-    metadata: {
-      name,
-      description,
-      icon,
-      slug: categorySlug,
-      _collection: 'categories',
-    },
-    tags: ['category'],
-    created_at: now,
-    last_accessed_at: now,
-    access_count: 0,
-    importance: 0.9,
-    decay_rate: 0.01,
-    entity_ids: [],
-    relation_ids: [],
-  };
+  // Validate code format (only allow a-z, 0-9, _, -)
+  if (!/^[a-z0-9_-]+$/.test(code)) {
+    return res.status(400).json({ error: 'Category code must only contain lowercase letters, numbers, underscores and hyphens' });
+  }
+
+  // Use code to generate ID, slug defaults to code if not provided
+  const categorySlug = slug || code;
+  const categoryId = `cat_${code}`;
 
   try {
-    // Read existing categories and add new one
-    const categories = await readCollectionFile(dbPath, 'categories');
-    categories.push(newCategory);
-    writeCollectionFile(dbPath, 'categories', categories);
+    // Check if category ID already exists
+    const existingCategories = await readCollectionFile(dbPath, 'categories');
+    if (existingCategories.some(c => c.id === categoryId)) {
+      return res.status(400).json({ error: `Category with ID '${categoryId}' already exists` });
+    }
+
+    // Create the new category
+    const now = Date.now();
+    const newCategory: MemoryNode = {
+      id: categoryId,
+      content: `${name} - ${description}`,
+      content_type: 'category',
+      parent_id: undefined,
+      children: [],
+      depth: 0,
+      metadata: {
+        name,
+        description,
+        icon,
+        slug: categorySlug,
+        _collection: 'categories',
+      },
+      tags: ['category'],
+      created_at: now,
+      last_accessed_at: now,
+      access_count: 0,
+      importance: 0.9,
+      decay_rate: 0.01,
+      entity_ids: [],
+      relation_ids: [],
+    };
+
+    // Use appendFileSync like news articles do - more reliable
+    const collectionDir = path.join(dbPath, 'categories');
+    const collectionDocPath = path.join(collectionDir, 'documents.jsonl');
+    
+    // Ensure directory exists
+    if (!existsSync(collectionDir)) {
+      console.log('Creating categories directory:', collectionDir);
+      mkdirSync(collectionDir, { recursive: true });
+    }
+    
+    // Append new category (same approach as news articles)
+    console.log('Appending category to:', collectionDocPath);
+    appendFileSync(collectionDocPath, JSON.stringify(newCategory) + '\n');
 
     res.status(201).json({
       success: true,
@@ -1198,9 +1234,9 @@ app.post('/api/news/categories', async (req, res) => {
         slug: categorySlug,
       },
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Failed to create category:', error);
-    res.status(500).json({ error: 'Failed to create category' });
+    res.status(500).json({ error: `Failed to create category: ${error.message}` });
   }
 });
 
@@ -1284,6 +1320,183 @@ app.delete('/api/news/categories/:id', async (req, res) => {
   } catch (error) {
     console.error('Failed to delete category:', error);
     res.status(500).json({ error: 'Failed to delete category' });
+  }
+});
+
+// ============================================================================
+// User Management APIs
+// ============================================================================
+
+// Create a new user
+app.post('/api/news/users', async (req, res) => {
+  const { path: dbPath, name, email, avatar, role } = req.body;
+
+  if (!dbPath || !isValidAidb(dbPath)) {
+    return res.status(400).json({ error: 'Invalid database path' });
+  }
+
+  if (!name || !email || !role) {
+    return res.status(400).json({ error: 'Name, email and role are required' });
+  }
+
+  // Validate role
+  const validRoles = ['admin', 'editor', 'reader', 'guest'];
+  if (!validRoles.includes(role)) {
+    return res.status(400).json({ error: 'Invalid role. Must be one of: admin, editor, reader, guest' });
+  }
+
+  // Generate user ID from name (similar to category code approach)
+  const userCode = name.toLowerCase().replace(/[^a-z0-9]/g, '_').substring(0, 20);
+  const userId = `user_${userCode}_${Date.now().toString(36)}`;
+
+  try {
+    // Check if email already exists
+    const existingUsers = await readCollectionFile(dbPath, 'users');
+    if (existingUsers.some(u => u.metadata?.email === email)) {
+      return res.status(400).json({ error: `User with email '${email}' already exists` });
+    }
+
+    // Create the new user
+    const now = Date.now();
+    const newUser: MemoryNode = {
+      id: userId,
+      content: `${role} ${name}`,
+      content_type: 'user',
+      parent_id: undefined,
+      children: [],
+      depth: 0,
+      metadata: {
+        name,
+        email,
+        avatar: avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${userCode}`,
+        role,
+        _collection: 'users',
+      },
+      tags: ['user', role],
+      created_at: now,
+      last_accessed_at: now,
+      access_count: 0,
+      importance: role === 'admin' ? 1.0 : role === 'editor' ? 0.8 : role === 'reader' ? 0.5 : 0.3,
+      decay_rate: 0.01,
+      entity_ids: [],
+      relation_ids: [],
+    };
+
+    // Append to users collection
+    const collectionDir = path.join(dbPath, 'users');
+    const collectionDocPath = path.join(collectionDir, 'documents.jsonl');
+    
+    if (!existsSync(collectionDir)) {
+      mkdirSync(collectionDir, { recursive: true });
+    }
+    
+    appendFileSync(collectionDocPath, JSON.stringify(newUser) + '\n');
+
+    res.status(201).json({
+      success: true,
+      user: {
+        id: newUser.id,
+        name,
+        email,
+        avatar: newUser.metadata.avatar,
+        role,
+      },
+    });
+  } catch (error: any) {
+    console.error('Failed to create user:', error);
+    res.status(500).json({ error: `Failed to create user: ${error.message}` });
+  }
+});
+
+// Update a user
+app.put('/api/news/users/:id', async (req, res) => {
+  const { path: dbPath, name, email, avatar, role } = req.body;
+  const { id } = req.params;
+
+  if (!dbPath || !isValidAidb(dbPath)) {
+    return res.status(400).json({ error: 'Invalid database path' });
+  }
+
+  // Validate role if provided
+  if (role) {
+    const validRoles = ['admin', 'editor', 'reader', 'guest'];
+    if (!validRoles.includes(role)) {
+      return res.status(400).json({ error: 'Invalid role. Must be one of: admin, editor, reader, guest' });
+    }
+  }
+
+  try {
+    const users = await readCollectionFile(dbPath, 'users');
+    const userIndex = users.findIndex(u => u.id === id);
+
+    if (userIndex === -1) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    // Check if email already exists (for another user)
+    if (email && users.some(u => u.id !== id && u.metadata?.email === email)) {
+      return res.status(400).json({ error: `User with email '${email}' already exists` });
+    }
+
+    // Update the user
+    const user = users[userIndex];
+    if (name) user.metadata.name = name;
+    if (email) user.metadata.email = email;
+    if (avatar) user.metadata.avatar = avatar;
+    if (role) {
+      user.metadata.role = role;
+      user.tags = ['user', role];
+    }
+    user.content = `${user.metadata.role} ${user.metadata.name}`;
+    user.last_accessed_at = Date.now();
+
+    // Write back
+    writeCollectionFile(dbPath, 'users', users);
+
+    res.json({
+      success: true,
+      user: {
+        id: user.id,
+        name: user.metadata.name,
+        email: user.metadata.email,
+        avatar: user.metadata.avatar,
+        role: user.metadata.role,
+      },
+    });
+  } catch (error: any) {
+    console.error('Failed to update user:', error);
+    res.status(500).json({ error: `Failed to update user: ${error.message}` });
+  }
+});
+
+// Delete a user
+app.delete('/api/news/users/:id', async (req, res) => {
+  const dbPath = req.query.path as string;
+  const { id } = req.params;
+
+  if (!dbPath || !isValidAidb(dbPath)) {
+    return res.status(400).json({ error: 'Invalid database path' });
+  }
+
+  try {
+    // Read users and remove the one to delete
+    const users = await readCollectionFile(dbPath, 'users');
+    const filteredUsers = users.filter(u => u.id !== id);
+
+    if (filteredUsers.length === users.length) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    // Write back
+    writeCollectionFile(dbPath, 'users', filteredUsers);
+
+    // Note: We don't cascade delete or set_null here for simplicity
+    // In a real application, you might want to update news/comments that reference this user
+
+    res.json({ success: true });
+  } catch (error: any) {
+    console.error('Failed to delete user:', error);
+    res.status(500).json({ error: `Failed to delete user: ${error.message}` });
   }
 });
 

@@ -8,7 +8,8 @@ import {
   ArrowLeft,
   Edit2,
   Trash2,
-  Save
+  Save,
+  FileText
 } from 'lucide-react';
 import { getNewsCategories, createNewsCategory, updateNewsCategory, deleteNewsCategory } from '../utils/api';
 import type { NewsCategory } from '../types';
@@ -33,6 +34,7 @@ export default function CategoryManagementPage({ dbPath }: CategoryManagementPag
     description: '',
     icon: '📁',
     slug: '',
+    code: '', // 分类代码，必须是英文，用于生成 ID
   });
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
@@ -82,7 +84,8 @@ export default function CategoryManagementPage({ dbPath }: CategoryManagementPag
         name: createFormData.name,
         description: createFormData.description,
         icon: createFormData.icon,
-        slug: createFormData.slug || createFormData.name.toLowerCase().replace(/\s+/g, '-'),
+        slug: createFormData.slug || createFormData.code,
+        code: createFormData.code, // 分类代码用于生成 ID
       });
 
       // Reset form and refresh data
@@ -92,6 +95,7 @@ export default function CategoryManagementPage({ dbPath }: CategoryManagementPag
         description: '',
         icon: '📁',
         slug: '',
+        code: '',
       });
       fetchCategories(true);
     } catch (error: any) {
@@ -264,6 +268,32 @@ export default function CategoryManagementPage({ dbPath }: CategoryManagementPag
                 </div>
               </div>
 
+              {/* Code - 分类代码 */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  分类代码 <span className="text-red-500">*</span>
+                  <span className="text-gray-400 font-normal ml-2">(英文，用于生成ID，如: movie, music)</span>
+                </label>
+                <input
+                  type="text"
+                  value={createFormData.code}
+                  onChange={(e) => {
+                    // 只允许英文、数字、下划线和连字符
+                    const value = e.target.value.toLowerCase().replace(/[^a-z0-9_-]/g, '');
+                    setCreateFormData(prev => ({ ...prev, code: value }));
+                  }}
+                  className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 font-mono"
+                  placeholder="例如: movie, music, game"
+                  required
+                  pattern="[a-z0-9_-]+"
+                />
+                {createFormData.code && (
+                  <p className="text-xs text-gray-500 mt-1">
+                    生成的ID: <code className="bg-gray-100 px-1 rounded">cat_{createFormData.code}</code>
+                  </p>
+                )}
+              </div>
+
               {/* Name */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -274,7 +304,7 @@ export default function CategoryManagementPage({ dbPath }: CategoryManagementPag
                   value={createFormData.name}
                   onChange={(e) => setCreateFormData(prev => ({ ...prev, name: e.target.value }))}
                   className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
-                  placeholder="输入分类名称"
+                  placeholder="输入分类名称（支持中文）"
                   required
                 />
               </div>
@@ -451,26 +481,41 @@ export default function CategoryManagementPage({ dbPath }: CategoryManagementPag
                       </div>
                     </div>
                     
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-4">
+                      {/* Article Count - Clickable to filter articles */}
                       <button
-                        onClick={() => handleStartEdit(category)}
-                        className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                        title="编辑"
+                        onClick={() => navigate(`/news-system?view=articles&category=${category.id}`)}
+                        className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 hover:bg-blue-100 hover:text-blue-700 rounded-lg transition-colors"
+                        title="点击查看该分类下的文章"
                       >
-                        <Edit2 className="w-4 h-4" />
+                        <FileText className="w-4 h-4" />
+                        <span className="text-sm font-medium">
+                          {category.articleCount ?? 0}
+                        </span>
+                        <span className="text-xs">篇文章</span>
                       </button>
-                      <button
-                        onClick={() => handleDeleteCategory(category.id)}
-                        disabled={deletingId === category.id}
-                        className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-50"
-                        title="删除"
-                      >
-                        {deletingId === category.id ? (
-                          <RefreshCw className="w-4 h-4 animate-spin" />
-                        ) : (
-                          <Trash2 className="w-4 h-4" />
-                        )}
-                      </button>
+                      
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => handleStartEdit(category)}
+                          className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                          title="编辑"
+                        >
+                          <Edit2 className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => handleDeleteCategory(category.id)}
+                          disabled={deletingId === category.id || (category.articleCount ?? 0) > 0}
+                          className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                          title={(category.articleCount ?? 0) > 0 ? "有文章引用，无法删除" : "删除"}
+                        >
+                          {deletingId === category.id ? (
+                            <RefreshCw className="w-4 h-4 animate-spin" />
+                          ) : (
+                            <Trash2 className="w-4 h-4" />
+                          )}
+                        </button>
+                      </div>
                     </div>
                   </div>
                 )}

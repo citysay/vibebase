@@ -146,6 +146,7 @@ export async function createNewsCategory(
     description: string;
     icon: string;
     slug: string;
+    code: string; // 分类代码（英文），用于生成 ID
   }
 ): Promise<{ success: boolean; category: NewsCategory }> {
   return fetchJson(`${API_BASE}/news/categories`, {
@@ -186,6 +187,51 @@ export async function deleteNewsCategory(
 // Get news users
 export async function getNewsUsers(path: string): Promise<{ users: NewsUser[] }> {
   return fetchJson(`${API_BASE}/news/users?path=${encodeURIComponent(path)}`);
+}
+
+// Create a new user
+export async function createNewsUser(
+  dbPath: string,
+  data: {
+    name: string;
+    email: string;
+    avatar: string;
+    role: 'admin' | 'editor' | 'reader' | 'guest';
+  }
+): Promise<{ success: boolean; user: NewsUser }> {
+  return fetchJson(`${API_BASE}/news/users`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path: dbPath, ...data }),
+  });
+}
+
+// Update a user
+export async function updateNewsUser(
+  dbPath: string,
+  userId: string,
+  data: {
+    name?: string;
+    email?: string;
+    avatar?: string;
+    role?: 'admin' | 'editor' | 'reader' | 'guest';
+  }
+): Promise<{ success: boolean; user: NewsUser }> {
+  return fetchJson(`${API_BASE}/news/users/${encodeURIComponent(userId)}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path: dbPath, ...data }),
+  });
+}
+
+// Delete a user
+export async function deleteNewsUser(
+  dbPath: string,
+  userId: string
+): Promise<{ success: boolean }> {
+  return fetchJson(`${API_BASE}/news/users/${encodeURIComponent(userId)}?path=${encodeURIComponent(dbPath)}`, {
+    method: 'DELETE',
+  });
 }
 
 // Get news articles with populated foreign keys

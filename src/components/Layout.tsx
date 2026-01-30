@@ -9,7 +9,8 @@ import {
   Database,
   LogOut,
   Newspaper,
-  FolderOpen
+  FolderOpen,
+  UserCog
 } from 'lucide-react';
 import type { DatabaseInfo } from '../types';
 
@@ -28,6 +29,7 @@ const navItems: { to: string; icon: any; label: string; highlight?: boolean }[] 
   { to: '/graph', icon: Network, label: '图谱' },
   { to: '/news-system', icon: Newspaper, label: '新闻系统' },
   { to: '/category-management', icon: FolderOpen, label: '分类管理' },
+  { to: '/user-management', icon: UserCog, label: '用户管理' },
 ];
 
 export default function Layout({ children, dbPath, dbInfo, onDisconnect }: LayoutProps) {
