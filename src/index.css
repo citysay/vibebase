@@ -1,0 +1,161 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #1e293b;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #475569;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #64748b;
+}
+
+/* Table styles */
+.data-table {
+  @apply w-full text-sm text-left;
+}
+
+.data-table th {
+  @apply px-4 py-3 text-xs font-medium text-slate-400 uppercase tracking-wider bg-slate-800 border-b border-slate-700;
+}
+
+.data-table td {
+  @apply px-4 py-3 text-slate-300 border-b border-slate-700;
+}
+
+.data-table tr:hover td {
+  @apply bg-slate-800/50;
+}
+
+/* Card styles */
+.card {
+  @apply bg-slate-800 rounded-xl border border-slate-700 overflow-hidden;
+}
+
+.card-header {
+  @apply px-6 py-4 border-b border-slate-700;
+}
+
+.card-title {
+  @apply text-lg font-semibold text-white;
+}
+
+.card-body {
+  @apply p-6;
+}
+
+/* Badge styles */
+.badge {
+  @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium;
+}
+
+.badge-primary {
+  @apply bg-primary-500/20 text-primary-400;
+}
+
+.badge-success {
+  @apply bg-green-500/20 text-green-400;
+}
+
+.badge-warning {
+  @apply bg-yellow-500/20 text-yellow-400;
+}
+
+.badge-danger {
+  @apply bg-red-500/20 text-red-400;
+}
+
+.badge-info {
+  @apply bg-blue-500/20 text-blue-400;
+}
+
+/* Button styles */
+.btn {
+  @apply inline-flex items-center justify-center px-4 py-2 rounded-lg font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-slate-900;
+}
+
+.btn-primary {
+  @apply bg-primary-500 hover:bg-primary-600 text-white focus:ring-primary-500;
+}
+
+.btn-secondary {
+  @apply bg-slate-700 hover:bg-slate-600 text-slate-300 focus:ring-slate-500;
+}
+
+.btn-sm {
+  @apply px-3 py-1.5 text-sm;
+}
+
+/* Input styles */
+.input {
+  @apply w-full px-4 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent;
+}
+
+.select {
+  @apply w-full px-4 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent appearance-none cursor-pointer;
+}
+
+/* Stat card */
+.stat-card {
+  @apply bg-slate-800 rounded-xl border border-slate-700 p-6;
+}
+
+.stat-value {
+  @apply text-3xl font-bold text-white;
+}
+
+.stat-label {
+  @apply text-sm text-slate-400 mt-1;
+}
+
+/* Loading spinner */
+.spinner {
+  @apply animate-spin h-5 w-5 text-primary-500;
+}
+
+/* Empty state */
+.empty-state {
+  @apply flex flex-col items-center justify-center py-12 text-slate-400;
+}
+
+/* Tooltip */
+.tooltip {
+  @apply absolute z-50 px-2 py-1 text-xs text-white bg-slate-700 rounded shadow-lg;
+}
+
+/* Modal backdrop */
+.modal-backdrop {
+  @apply fixed inset-0 bg-black/50 backdrop-blur-sm z-40;
+}
+
+.modal {
+  @apply fixed inset-0 flex items-center justify-center z-50 p-4;
+}
+
+.modal-content {
+  @apply bg-slate-800 rounded-xl border border-slate-700 shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-auto;
+}
+
+/* Pagination */
+.pagination {
+  @apply flex items-center gap-2;
+}
+
+.pagination-btn {
+  @apply px-3 py-1.5 text-sm bg-slate-700 hover:bg-slate-600 text-slate-300 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed;
+}
+
+.pagination-btn.active {
+  @apply bg-primary-500 text-white;
+}
