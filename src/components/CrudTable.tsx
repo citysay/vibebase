@@ -69,6 +69,12 @@ export interface CrudTableProps<T extends { id: string }> {
 
   // 图标选择器选项
   iconOptions?: string[];
+
+  // 行点击事件
+  onRowClick?: (record: T) => void;
+
+  // 可点击的字段（点击时触发 onRowClick）
+  clickableFields?: string[];
 }
 
 export default function CrudTable<T extends { id: string }>({
@@ -94,6 +100,8 @@ export default function CrudTable<T extends { id: string }>({
   extraActions,
   canDeleteRecord,
   iconOptions = ['👤', '👨‍💼', '👩‍💼', '🧑‍💻', '👨‍🎓', '👩‍🎓', '🧑‍🔬', '👨‍⚕️'],
+  onRowClick,
+  clickableFields = [],
 }: CrudTableProps<T>) {
   // 状态
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -475,11 +483,24 @@ export default function CrudTable<T extends { id: string }>({
                     ) : (
                       // 查看模式
                       <>
-                        {tableFields.map((field) => (
-                          <td key={field.key} className="px-4 py-3 text-gray-700">
-                            {renderCell(field, record)}
-                          </td>
-                        ))}
+                        {tableFields.map((field) => {
+                          const isClickable = clickableFields.includes(field.key) && onRowClick;
+                          return (
+                            <td key={field.key} className="px-4 py-3 text-gray-700">
+                              {isClickable ? (
+                                <button
+                                  type="button"
+                                  onClick={() => onRowClick(record)}
+                                  className="text-left text-primary-600 hover:text-primary-800 hover:underline cursor-pointer font-medium"
+                                >
+                                  {renderCell(field, record)}
+                                </button>
+                              ) : (
+                                renderCell(field, record)
+                              )}
+                            </td>
+                          );
+                        })}
                         {(canEdit || canDelete || extraActions) && (
                           <td className="px-4 py-3 text-right">
                             <div className="flex items-center justify-end gap-2">

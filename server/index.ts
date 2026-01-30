@@ -974,10 +974,17 @@ app.post('/api/news/articles', async (req, res) => {
     relation_ids: [],
   };
 
-  // Append to documents.jsonl
-  const documentsPath = path.join(dbPath, 'documents.jsonl');
+  // Append to news/documents.jsonl (collection subdirectory)
+  const newsCollectionDir = path.join(dbPath, 'news');
+  const newsDocumentsPath = path.join(newsCollectionDir, 'documents.jsonl');
+  
   try {
-    appendFileSync(documentsPath, JSON.stringify(newArticle) + '\n');
+    // Ensure news directory exists
+    if (!existsSync(newsCollectionDir)) {
+      mkdirSync(newsCollectionDir, { recursive: true });
+    }
+    
+    appendFileSync(newsDocumentsPath, JSON.stringify(newArticle) + '\n');
     
     // Return populated article
     const category = categories.find(c => c.id === categoryId);
@@ -1010,6 +1017,164 @@ app.post('/api/news/articles', async (req, res) => {
   } catch (error) {
     console.error('Failed to create article:', error);
     res.status(500).json({ error: 'Failed to create article' });
+  }
+});
+
+// Update a news article
+app.put('/api/news/articles/:id', async (req, res) => {
+  const { path: dbPath, title, content, categoryId, authorId, status, tags } = req.body;
+  const { id } = req.params;
+
+  if (!dbPath || !isValidAidb(dbPath)) {
+    return res.status(400).json({ error: 'Invalid database path' });
+  }
+
+  try {
+    // Read news from subdirectory
+    const newsCollectionDir = path.join(dbPath, 'news');
+    const newsDocumentsPath = path.join(newsCollectionDir, 'documents.jsonl');
+    
+    if (!existsSync(newsDocumentsPath)) {
+      return res.status(404).json({ error: 'News collection not found' });
+    }
+
+    const newsDocs = await readJsonlFile<MemoryNode>(newsDocumentsPath);
+    const articleIndex = newsDocs.findIndex(n => n.id === id);
+
+    if (articleIndex === -1) {
+      return res.status(404).json({ error: 'Article not found' });
+    }
+
+    // Validate foreign keys if provided
+    if (categoryId) {
+      const categories = await getDocumentsByCollection(dbPath, 'categories');
+      if (!categories.some(c => c.id === categoryId)) {
+        return res.status(400).json({ 
+          error: `Foreign key constraint violation: categoryId '${categoryId}' not found` 
+        });
+      }
+    }
+
+    if (authorId) {
+      const users = await getDocumentsByCollection(dbPath, 'users');
+      if (!users.some(u => u.id === authorId)) {
+        return res.status(400).json({ 
+          error: `Foreign key constraint violation: authorId '${authorId}' not found` 
+        });
+      }
+    }
+
+    // Update the article
+    const article = newsDocs[articleIndex];
+    if (title) article.metadata.title = title;
+    if (content) article.content = `${article.metadata.title}\n\n${content}`;
+    if (categoryId) article.metadata.categoryId = categoryId;
+    if (authorId) article.metadata.authorId = authorId;
+    if (status) {
+      article.metadata.status = status;
+      if (status === 'published' && !article.metadata.publishedAt) {
+        article.metadata.publishedAt = Date.now();
+      }
+    }
+    if (tags) article.tags = ['news', ...tags];
+    article.last_accessed_at = Date.now();
+
+    // Write back all documents
+    const contentStr = newsDocs.map(doc => JSON.stringify(doc)).join('\n') + '\n';
+    writeFileSync(newsDocumentsPath, contentStr, 'utf-8');
+
+    // Get populated data for response
+    const [categoryDocs, userDocs] = await Promise.all([
+      getDocumentsByCollection(dbPath, 'categories'),
+      getDocumentsByCollection(dbPath, 'users'),
+    ]);
+
+    const categoryDoc = categoryDocs.find(c => c.id === article.metadata.categoryId);
+    const authorDoc = userDocs.find(u => u.id === article.metadata.authorId);
+
+    res.json({
+      success: true,
+      article: {
+        id: article.id,
+        content: article.content,
+        title: article.metadata.title,
+        categoryId: article.metadata.categoryId,
+        authorId: article.metadata.authorId,
+        status: article.metadata.status,
+        publishedAt: article.metadata.publishedAt,
+        viewCount: article.metadata.viewCount || 0,
+        likeCount: article.metadata.likeCount || 0,
+        tags: article.tags,
+        created_at: article.created_at,
+        category: categoryDoc ? {
+          id: categoryDoc.id,
+          name: categoryDoc.metadata?.name || '',
+          icon: categoryDoc.metadata?.icon || '',
+        } : null,
+        author: authorDoc ? {
+          id: authorDoc.id,
+          name: authorDoc.metadata?.name || '',
+          avatar: authorDoc.metadata?.avatar || '',
+          role: authorDoc.metadata?.role || '',
+        } : null,
+      },
+    });
+  } catch (error: any) {
+    console.error('Failed to update article:', error);
+    res.status(500).json({ error: `Failed to update article: ${error.message}` });
+  }
+});
+
+// Delete a news article
+app.delete('/api/news/articles/:id', async (req, res) => {
+  const dbPath = req.query.path as string;
+  const { id } = req.params;
+
+  if (!dbPath || !isValidAidb(dbPath)) {
+    return res.status(400).json({ error: 'Invalid database path' });
+  }
+
+  try {
+    // Read news from subdirectory
+    const newsCollectionDir = path.join(dbPath, 'news');
+    const newsDocumentsPath = path.join(newsCollectionDir, 'documents.jsonl');
+    
+    if (!existsSync(newsDocumentsPath)) {
+      return res.status(404).json({ error: 'News collection not found' });
+    }
+
+    const newsDocs = await readJsonlFile<MemoryNode>(newsDocumentsPath);
+    const filteredDocs = newsDocs.filter(n => n.id !== id);
+
+    if (filteredDocs.length === newsDocs.length) {
+      return res.status(404).json({ error: 'Article not found' });
+    }
+
+    // Write back filtered documents
+    const contentStr = filteredDocs.length > 0 
+      ? filteredDocs.map(doc => JSON.stringify(doc)).join('\n') + '\n'
+      : '';
+    writeFileSync(newsDocumentsPath, contentStr, 'utf-8');
+
+    // Also delete related comments (cascade delete)
+    const commentsDocs = await getDocumentsByCollection(dbPath, 'comments');
+    const filteredComments = commentsDocs.filter(c => c.metadata?.newsId !== id);
+    
+    if (filteredComments.length < commentsDocs.length) {
+      const commentsDir = path.join(dbPath, 'comments');
+      const commentsPath = path.join(commentsDir, 'documents.jsonl');
+      if (existsSync(commentsPath)) {
+        const commentsContent = filteredComments.length > 0
+          ? filteredComments.map(doc => JSON.stringify(doc)).join('\n') + '\n'
+          : '';
+        writeFileSync(commentsPath, commentsContent, 'utf-8');
+      }
+    }
+
+    res.json({ success: true });
+  } catch (error: any) {
+    console.error('Failed to delete article:', error);
+    res.status(500).json({ error: `Failed to delete article: ${error.message}` });
   }
 });
 

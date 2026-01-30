@@ -301,6 +301,36 @@ export async function createNewsArticle(
   });
 }
 
+// Update a news article
+export async function updateNewsArticle(
+  dbPath: string,
+  articleId: string,
+  data: {
+    title?: string;
+    content?: string;
+    categoryId?: string;
+    authorId?: string;
+    status?: 'draft' | 'published';
+    tags?: string[];
+  }
+): Promise<{ success: boolean; article: NewsArticle }> {
+  return fetchJson(`${API_BASE}/news/articles/${encodeURIComponent(articleId)}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path: dbPath, ...data }),
+  });
+}
+
+// Delete a news article
+export async function deleteNewsArticle(
+  dbPath: string,
+  articleId: string
+): Promise<{ success: boolean }> {
+  return fetchJson(`${API_BASE}/news/articles/${encodeURIComponent(articleId)}?path=${encodeURIComponent(dbPath)}`, {
+    method: 'DELETE',
+  });
+}
+
 // Create a new comment
 export async function createNewsComment(
   dbPath: string,
