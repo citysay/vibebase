@@ -7,6 +7,7 @@ import EntitiesPage from './pages/EntitiesPage';
 import RelationsPage from './pages/RelationsPage';
 import GraphPage from './pages/GraphPage';
 import NewsSystemPage from './pages/NewsSystemPage';
+import CategoryManagementPage from './pages/CategoryManagementPage';
 import DatabaseSelector from './components/DatabaseSelector';
 import type { DatabaseInfo } from './types';
 
@@ -53,6 +54,7 @@ function App() {
         <Route path="/relations" element={<RelationsPage dbPath={dbPath} />} />
         <Route path="/graph" element={<GraphPage dbPath={dbPath} />} />
         <Route path="/news-system" element={<NewsSystemPage dbPath={dbPath} />} />
+        <Route path="/category-management" element={<CategoryManagementPage dbPath={dbPath} />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </Layout>

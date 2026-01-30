@@ -138,6 +138,51 @@ export async function getNewsCategories(path: string): Promise<{ categories: New
   return fetchJson(`${API_BASE}/news/categories?path=${encodeURIComponent(path)}`);
 }
 
+// Create a new category
+export async function createNewsCategory(
+  dbPath: string,
+  data: {
+    name: string;
+    description: string;
+    icon: string;
+    slug: string;
+  }
+): Promise<{ success: boolean; category: NewsCategory }> {
+  return fetchJson(`${API_BASE}/news/categories`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path: dbPath, ...data }),
+  });
+}
+
+// Update a category
+export async function updateNewsCategory(
+  dbPath: string,
+  categoryId: string,
+  data: {
+    name?: string;
+    description?: string;
+    icon?: string;
+    slug?: string;
+  }
+): Promise<{ success: boolean; category: NewsCategory }> {
+  return fetchJson(`${API_BASE}/news/categories/${encodeURIComponent(categoryId)}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path: dbPath, ...data }),
+  });
+}
+
+// Delete a category
+export async function deleteNewsCategory(
+  dbPath: string,
+  categoryId: string
+): Promise<{ success: boolean }> {
+  return fetchJson(`${API_BASE}/news/categories/${encodeURIComponent(categoryId)}?path=${encodeURIComponent(dbPath)}`, {
+    method: 'DELETE',
+  });
+}
+
 // Get news users
 export async function getNewsUsers(path: string): Promise<{ users: NewsUser[] }> {
   return fetchJson(`${API_BASE}/news/users?path=${encodeURIComponent(path)}`);

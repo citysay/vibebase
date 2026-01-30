@@ -572,214 +572,46 @@ function populateComment(
   };
 }
 
-// Get news categories
-app.get('/api/news/categories', async (req, res) => {
-  const dbPath = req.query.path as string;
-
-  if (!dbPath || !isValidAidb(dbPath)) {
-    return res.status(400).json({ error: 'Invalid database path' });
-  }
-
-  const documentsPath = path.join(dbPath, 'documents.jsonl');
-  const documents = await readJsonlFile<MemoryNode>(documentsPath);
-  const { categories } = parseDocumentsByCollection(documents);
-
-  const result = categories.map(c => ({
-    id: c.id,
-    name: c.metadata?.name || '',
-    description: c.metadata?.description || '',
-    icon: c.metadata?.icon || '',
-    slug: c.metadata?.slug || '',
-  }));
-
-  res.json({ categories: result });
-});
-
-// Get news users
-app.get('/api/news/users', async (req, res) => {
-  const dbPath = req.query.path as string;
-
-  if (!dbPath || !isValidAidb(dbPath)) {
-    return res.status(400).json({ error: 'Invalid database path' });
-  }
-
-  const documentsPath = path.join(dbPath, 'documents.jsonl');
-  const documents = await readJsonlFile<MemoryNode>(documentsPath);
-  const { users } = parseDocumentsByCollection(documents);
-
-  const result = users.map(u => ({
-    id: u.id,
-    name: u.metadata?.name || '',
-    email: u.metadata?.email || '',
-    avatar: u.metadata?.avatar || '',
-    role: u.metadata?.role || 'guest',
-  }));
-
-  res.json({ users: result });
-});
-
-// Get news articles with populated foreign keys
-app.get('/api/news/articles', async (req, res) => {
-  const dbPath = req.query.path as string;
-  const limit = parseInt(req.query.limit as string) || 100;
-  const offset = parseInt(req.query.offset as string) || 0;
-  const categoryId = req.query.categoryId as string;
-  const authorId = req.query.authorId as string;
-  const status = req.query.status as string;
-  const search = req.query.search as string;
-
-  if (!dbPath || !isValidAidb(dbPath)) {
-    return res.status(400).json({ error: 'Invalid database path' });
-  }
-
-  const documentsPath = path.join(dbPath, 'documents.jsonl');
-  const documents = await readJsonlFile<MemoryNode>(documentsPath);
-  const { categories, users, news } = parseDocumentsByCollection(documents);
-
-  // Filter articles
-  let filteredNews = news;
-
-  if (categoryId) {
-    filteredNews = filteredNews.filter(n => n.metadata?.categoryId === categoryId);
-  }
-
-  if (authorId) {
-    filteredNews = filteredNews.filter(n => n.metadata?.authorId === authorId);
-  }
-
-  if (status) {
-    filteredNews = filteredNews.filter(n => n.metadata?.status === status);
-  }
-
-  if (search) {
-    const lowerSearch = search.toLowerCase();
-    filteredNews = filteredNews.filter(n =>
-      n.content.toLowerCase().includes(lowerSearch) ||
-      (n.metadata?.title as string || '').toLowerCase().includes(lowerSearch)
-    );
-  }
-
-  // Sort by publishedAt descending
-  filteredNews.sort((a, b) => {
-    const aTime = (a.metadata?.publishedAt as number) || a.created_at;
-    const bTime = (b.metadata?.publishedAt as number) || b.created_at;
-    return bTime - aTime;
-  });
-
-  const total = filteredNews.length;
-
-  // Paginate
-  filteredNews = filteredNews.slice(offset, offset + limit);
-
-  // Populate foreign keys
-  const articles = filteredNews.map(n => populateNewsArticle(n, categories, users));
-
-  res.json({ articles, total, offset, limit });
-});
-
-// Get single news article with populated foreign keys
-app.get('/api/news/articles/:id', async (req, res) => {
-  const dbPath = req.query.path as string;
-  const { id } = req.params;
-
-  if (!dbPath || !isValidAidb(dbPath)) {
-    return res.status(400).json({ error: 'Invalid database path' });
-  }
-
-  const documentsPath = path.join(dbPath, 'documents.jsonl');
-  const documents = await readJsonlFile<MemoryNode>(documentsPath);
-  const { categories, users, news } = parseDocumentsByCollection(documents);
-
-  const article = news.find(n => n.id === id);
-  if (!article) {
-    return res.status(404).json({ error: 'Article not found' });
-  }
-
-  res.json(populateNewsArticle(article, categories, users));
-});
-
-// Get comments for a news article with populated foreign keys
-app.get('/api/news/comments', async (req, res) => {
-  const dbPath = req.query.path as string;
-  const newsId = req.query.newsId as string;
-
-  if (!dbPath || !isValidAidb(dbPath)) {
-    return res.status(400).json({ error: 'Invalid database path' });
-  }
-
-  const documentsPath = path.join(dbPath, 'documents.jsonl');
-  const documents = await readJsonlFile<MemoryNode>(documentsPath);
-  const { users, comments } = parseDocumentsByCollection(documents);
-
-  // Filter comments by newsId
-  let filteredComments = comments;
-  if (newsId) {
-    filteredComments = filteredComments.filter(c => c.metadata?.newsId === newsId);
-  }
-
-  // Sort by created_at ascending
-  filteredComments.sort((a, b) => a.created_at - b.created_at);
-
-  // Populate foreign keys
-  const populatedComments = filteredComments.map(c => populateComment(c, users));
-
-  // Build nested comment structure
-  const commentMap = new Map<string, Record<string, unknown>>();
-  const rootComments: Record<string, unknown>[] = [];
-
-  for (const comment of populatedComments) {
-    commentMap.set(comment.id as string, { ...comment, replies: [] });
-  }
-
-  for (const comment of populatedComments) {
-    const enrichedComment = commentMap.get(comment.id as string)!;
-    const parentId = comment.parentId as string | null;
-    
-    if (parentId && commentMap.has(parentId)) {
-      const parent = commentMap.get(parentId)!;
-      (parent.replies as Record<string, unknown>[]).push(enrichedComment);
-    } else {
-      rootComments.push(enrichedComment);
-    }
-  }
-
-  res.json({ comments: rootComments });
-});
-
-// Get news system stats
-app.get('/api/news/stats', async (req, res) => {
-  const dbPath = req.query.path as string;
-
-  if (!dbPath || !isValidAidb(dbPath)) {
-    return res.status(400).json({ error: 'Invalid database path' });
-  }
-
-  const documentsPath = path.join(dbPath, 'documents.jsonl');
-  const documents = await readJsonlFile<MemoryNode>(documentsPath);
-  const { categories, users, news, comments } = parseDocumentsByCollection(documents);
-
-  const publishedCount = news.filter(n => n.metadata?.status === 'published').length;
-  const draftCount = news.filter(n => n.metadata?.status === 'draft').length;
-
-  res.json({
-    categoryCount: categories.length,
-    userCount: users.length,
-    articleCount: news.length,
-    commentCount: comments.length,
-    publishedCount,
-    draftCount,
-  });
-});
+// NOTE: Old API routes using parseDocumentsByCollection have been removed.
+// All News System API routes below use getDocumentsByCollection which supports
+// reading from subdirectories (e.g., categories/documents.jsonl)
 
 // ============================================================================
 // News System APIs (with Foreign Key support)
 // ============================================================================
 
 // Helper: Get documents by collection type
+// Supports both:
+// 1. Collection stored in main documents.jsonl with _collection metadata
+// 2. Collection stored in subdirectory: {dbPath}/{collection}/documents.jsonl
 async function getDocumentsByCollection(dbPath: string, collection: string): Promise<MemoryNode[]> {
-  const documentsPath = path.join(dbPath, 'documents.jsonl');
-  const allDocs = await readJsonlFile<MemoryNode>(documentsPath);
-  return allDocs.filter(doc => doc.metadata?._collection === collection);
+  const results: MemoryNode[] = [];
+  
+  // First, check if there's a subdirectory for this collection
+  const collectionDir = path.join(dbPath, collection);
+  const collectionDocPath = path.join(collectionDir, 'documents.jsonl');
+  
+  if (existsSync(collectionDocPath)) {
+    // Read from collection subdirectory
+    const collectionDocs = await readJsonlFile<MemoryNode>(collectionDocPath);
+    results.push(...collectionDocs);
+  }
+  
+  // Also read from main documents.jsonl (for backward compatibility)
+  const mainDocPath = path.join(dbPath, 'documents.jsonl');
+  if (existsSync(mainDocPath)) {
+    const allDocs = await readJsonlFile<MemoryNode>(mainDocPath);
+    const filteredDocs = allDocs.filter(doc => doc.metadata?._collection === collection);
+    // Avoid duplicates by checking IDs
+    const existingIds = new Set(results.map(d => d.id));
+    for (const doc of filteredDocs) {
+      if (!existingIds.has(doc.id)) {
+        results.push(doc);
+      }
+    }
+  }
+  
+  return results;
 }
 
 // Helper: Create lookup map
@@ -1274,212 +1106,184 @@ app.post('/api/news/comments', async (req, res) => {
   }
 });
 
-// Create a new news article
-app.post('/api/news/articles', async (req, res) => {
-  const { path: dbPath, title, content, categoryId, authorId, status = 'draft', tags = [] } = req.body;
+// ============================================================================
+// Category Management APIs
+// ============================================================================
+
+// Helper: Read JSONL file from collection subdirectory
+async function readCollectionFile(dbPath: string, collection: string): Promise<MemoryNode[]> {
+  const collectionDocPath = path.join(dbPath, collection, 'documents.jsonl');
+  if (existsSync(collectionDocPath)) {
+    return readJsonlFile<MemoryNode>(collectionDocPath);
+  }
+  return [];
+}
+
+// Helper: Write JSONL file to collection subdirectory
+function writeCollectionFile(dbPath: string, collection: string, documents: MemoryNode[]): void {
+  const collectionDir = path.join(dbPath, collection);
+  const collectionDocPath = path.join(collectionDir, 'documents.jsonl');
+  
+  // Ensure directory exists
+  if (!existsSync(collectionDir)) {
+    require('fs').mkdirSync(collectionDir, { recursive: true });
+  }
+  
+  // Write all documents
+  const content = documents.map(doc => JSON.stringify(doc)).join('\n') + '\n';
+  require('fs').writeFileSync(collectionDocPath, content, 'utf-8');
+}
+
+// Create a new category
+app.post('/api/news/categories', async (req, res) => {
+  const { path: dbPath, name, description, icon, slug } = req.body;
 
   if (!dbPath || !isValidAidb(dbPath)) {
     return res.status(400).json({ error: 'Invalid database path' });
   }
 
-  if (!title || !content) {
-    return res.status(400).json({ error: 'Title and content are required' });
+  if (!name || !description || !icon) {
+    return res.status(400).json({ error: 'Name, description and icon are required' });
   }
 
-  if (!categoryId || !authorId) {
-    return res.status(400).json({ error: 'Category and author are required' });
+  // Generate slug if not provided
+  const categorySlug = slug || name.toLowerCase().replace(/\s+/g, '-');
+  const categoryId = `cat_${categorySlug}`;
+
+  // Check if category ID already exists
+  const existingCategories = await readCollectionFile(dbPath, 'categories');
+  if (existingCategories.some(c => c.id === categoryId)) {
+    return res.status(400).json({ error: `Category with ID '${categoryId}' already exists` });
   }
 
-  // Validate foreign keys exist
-  const [categoryDocs, userDocs] = await Promise.all([
-    getDocumentsByCollection(dbPath, 'categories'),
-    getDocumentsByCollection(dbPath, 'users'),
-  ]);
-
-  const categoryExists = categoryDocs.some(c => c.id === categoryId);
-  const authorExists = userDocs.some(u => u.id === authorId);
-
-  if (!categoryExists) {
-    return res.status(400).json({ error: `Foreign key error: Category '${categoryId}' not found` });
-  }
-
-  if (!authorExists) {
-    return res.status(400).json({ error: `Foreign key error: Author '${authorId}' not found` });
-  }
-
-  // Create new article
+  // Create the new category
   const now = Date.now();
-  const articleId = `news_${randomUUID().slice(0, 8)}`;
-
-  const newArticle: MemoryNode = {
-    id: articleId,
-    content: `${title}\n\n${content}`,
-    content_type: 'news',
+  const newCategory: MemoryNode = {
+    id: categoryId,
+    content: `${name} - ${description}`,
+    content_type: 'category',
     parent_id: undefined,
     children: [],
     depth: 0,
     metadata: {
-      title,
-      categoryId,
-      authorId,
-      status,
-      publishedAt: status === 'published' ? now : 0,
-      viewCount: 0,
-      likeCount: 0,
-      _collection: 'news',
-      _foreignKeys: {
-        categoryId: { targetCollection: 'categories', onDelete: 'restrict' },
-        authorId: { targetCollection: 'users', onDelete: 'set_null' },
-      },
+      name,
+      description,
+      icon,
+      slug: categorySlug,
+      _collection: 'categories',
     },
-    tags: ['news', ...tags],
+    tags: ['category'],
     created_at: now,
     last_accessed_at: now,
     access_count: 0,
-    importance: status === 'published' ? 0.8 : 0.5,
+    importance: 0.9,
     decay_rate: 0.01,
     entity_ids: [],
     relation_ids: [],
   };
 
-  // Append to documents.jsonl
-  const documentsPath = path.join(dbPath, 'documents.jsonl');
   try {
-    appendFileSync(documentsPath, JSON.stringify(newArticle) + '\n');
-    
-    // Get populated article for response
-    const categoryDoc = categoryDocs.find(c => c.id === categoryId);
-    const authorDoc = userDocs.find(u => u.id === authorId);
+    // Read existing categories and add new one
+    const categories = await readCollectionFile(dbPath, 'categories');
+    categories.push(newCategory);
+    writeCollectionFile(dbPath, 'categories', categories);
 
-    res.json({
+    res.status(201).json({
       success: true,
-      article: {
-        id: newArticle.id,
-        content: newArticle.content,
-        title,
-        categoryId,
-        authorId,
-        status,
-        publishedAt: newArticle.metadata.publishedAt,
-        viewCount: 0,
-        likeCount: 0,
-        tags: newArticle.tags,
-        created_at: now,
-        category: categoryDoc ? {
-          id: categoryDoc.id,
-          name: categoryDoc.metadata?.name || '',
-          icon: categoryDoc.metadata?.icon || '',
-        } : null,
-        author: authorDoc ? {
-          id: authorDoc.id,
-          name: authorDoc.metadata?.name || '',
-          avatar: authorDoc.metadata?.avatar || '',
-        } : null,
+      category: {
+        id: newCategory.id,
+        name,
+        description,
+        icon,
+        slug: categorySlug,
       },
     });
   } catch (error) {
-    console.error('Failed to save article:', error);
-    res.status(500).json({ error: 'Failed to save article' });
+    console.error('Failed to create category:', error);
+    res.status(500).json({ error: 'Failed to create category' });
   }
 });
 
-// Create a new comment
-app.post('/api/news/comments', async (req, res) => {
-  const { path: dbPath, newsId, authorId, content, parentId = null } = req.body;
+// Update a category
+app.put('/api/news/categories/:id', async (req, res) => {
+  const { path: dbPath, name, description, icon, slug } = req.body;
+  const { id } = req.params;
 
   if (!dbPath || !isValidAidb(dbPath)) {
     return res.status(400).json({ error: 'Invalid database path' });
   }
 
-  if (!newsId || !authorId || !content) {
-    return res.status(400).json({ error: 'newsId, authorId and content are required' });
-  }
-
-  // Validate foreign keys
-  const [newsDocs, userDocs, commentDocs] = await Promise.all([
-    getDocumentsByCollection(dbPath, 'news'),
-    getDocumentsByCollection(dbPath, 'users'),
-    getDocumentsByCollection(dbPath, 'comments'),
-  ]);
-
-  const newsExists = newsDocs.some(n => n.id === newsId);
-  const authorExists = userDocs.some(u => u.id === authorId);
-
-  if (!newsExists) {
-    return res.status(400).json({ error: `Foreign key error: News '${newsId}' not found` });
-  }
-
-  if (!authorExists) {
-    return res.status(400).json({ error: `Foreign key error: Author '${authorId}' not found` });
-  }
-
-  if (parentId) {
-    const parentExists = commentDocs.some(c => c.id === parentId);
-    if (!parentExists) {
-      return res.status(400).json({ error: `Foreign key error: Parent comment '${parentId}' not found` });
-    }
-  }
-
-  // Create new comment
-  const now = Date.now();
-  const commentId = `comment_${randomUUID().slice(0, 8)}`;
-
-  const newComment: MemoryNode = {
-    id: commentId,
-    content,
-    content_type: 'comment',
-    parent_id: parentId || undefined,
-    children: [],
-    depth: parentId ? 1 : 0,
-    metadata: {
-      newsId,
-      authorId,
-      parentId,
-      likeCount: 0,
-      _collection: 'comments',
-      _foreignKeys: {
-        newsId: { targetCollection: 'news', onDelete: 'cascade' },
-        authorId: { targetCollection: 'users', onDelete: 'set_null' },
-        parentId: { targetCollection: 'comments', onDelete: 'cascade' },
-      },
-    },
-    tags: parentId ? ['comment', 'reply'] : ['comment'],
-    created_at: now,
-    last_accessed_at: now,
-    access_count: 0,
-    importance: 0.5,
-    decay_rate: 0.01,
-    entity_ids: [],
-    relation_ids: [],
-  };
-
-  // Append to documents.jsonl
-  const documentsPath = path.join(dbPath, 'documents.jsonl');
   try {
-    appendFileSync(documentsPath, JSON.stringify(newComment) + '\n');
-    
-    const authorDoc = userDocs.find(u => u.id === authorId);
+    const categories = await readCollectionFile(dbPath, 'categories');
+    const categoryIndex = categories.findIndex(c => c.id === id);
+
+    if (categoryIndex === -1) {
+      return res.status(404).json({ error: 'Category not found' });
+    }
+
+    // Update the category
+    const category = categories[categoryIndex];
+    if (name) category.metadata.name = name;
+    if (description) category.metadata.description = description;
+    if (icon) category.metadata.icon = icon;
+    if (slug) category.metadata.slug = slug;
+    category.content = `${category.metadata.name} - ${category.metadata.description}`;
+    category.last_accessed_at = Date.now();
+
+    // Write back
+    writeCollectionFile(dbPath, 'categories', categories);
 
     res.json({
       success: true,
-      comment: {
-        id: newComment.id,
-        content,
-        newsId,
-        authorId,
-        parentId,
-        likeCount: 0,
-        created_at: now,
-        author: authorDoc ? {
-          id: authorDoc.id,
-          name: authorDoc.metadata?.name || '',
-          avatar: authorDoc.metadata?.avatar || '',
-        } : null,
+      category: {
+        id: category.id,
+        name: category.metadata.name,
+        description: category.metadata.description,
+        icon: category.metadata.icon,
+        slug: category.metadata.slug,
       },
     });
   } catch (error) {
-    console.error('Failed to save comment:', error);
-    res.status(500).json({ error: 'Failed to save comment' });
+    console.error('Failed to update category:', error);
+    res.status(500).json({ error: 'Failed to update category' });
+  }
+});
+
+// Delete a category
+app.delete('/api/news/categories/:id', async (req, res) => {
+  const dbPath = req.query.path as string;
+  const { id } = req.params;
+
+  if (!dbPath || !isValidAidb(dbPath)) {
+    return res.status(400).json({ error: 'Invalid database path' });
+  }
+
+  try {
+    // Check if any news articles reference this category
+    const newsDocs = await getDocumentsByCollection(dbPath, 'news');
+    const hasReferences = newsDocs.some(n => n.metadata?.categoryId === id);
+
+    if (hasReferences) {
+      return res.status(400).json({ 
+        error: `Cannot delete category '${id}': it is referenced by news articles (restrict constraint)` 
+      });
+    }
+
+    // Read categories and remove the one to delete
+    const categories = await readCollectionFile(dbPath, 'categories');
+    const filteredCategories = categories.filter(c => c.id !== id);
+
+    if (filteredCategories.length === categories.length) {
+      return res.status(404).json({ error: 'Category not found' });
+    }
+
+    // Write back
+    writeCollectionFile(dbPath, 'categories', filteredCategories);
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Failed to delete category:', error);
+    res.status(500).json({ error: 'Failed to delete category' });
   }
 });
 
